@@ -38,11 +38,9 @@ class SpringWebSocketHandler(
     }
 
     override fun afterConnectionEstablished(session: WebSocketSession) {
-        session.
         serverWebSocketFactory.wrap(
             session = session,
             config = config,
-            uri = session.uri!!,
         )
     }
 

@@ -138,6 +138,56 @@ class ChatRoomJoinInitializer {
 
 ---
 
+# Message Serialization & Deserialization
+
+Spring-K-Socket uses a flexible serialization system to convert your objects to WebSocket-friendly formats (String or ByteArray) and vice versa.
+
+> **Note:** For deserializers, the input `Any` is always either a `String` (text frame) or a `ByteArray` (binary frame).
+
+### 1. Define your Serializers
+Implement `WebSocketSerializer` and `WebSocketDeserializer` and register them as Spring beans.
+
+```kotlin
+@Component
+class JsonSerializer(private val objectMapper: ObjectMapper) : WebSocketSerializer {
+    override fun toStringOrByteArray(obj: Any): Any = objectMapper.writeValueAsString(obj)
+}
+
+@Component
+class JsonDeserializer(private val objectMapper: ObjectMapper) : WebSocketDeserializer {
+    override fun fromStringOrByteArray(obj: Any): Any {
+        // obj is either a String or a ByteArray
+        return if (obj is String) objectMapper.readValue(obj, MyTargetClass::class.java)
+        else obj
+    }
+}
+```
+
+### 2. Configure Defaults
+Set the default serialization logic for an entire socket using the `@WebSocketServer` or `@WebSocketClient` annotation.
+
+```kotlin
+@WebSocketClient(
+    url = "...",
+    defaultSerializer = JsonSerializer::class,
+    defaultDeserializer = JsonDeserializer::class
+)
+class MyClient
+```
+
+### 3. Override per Handler
+Individual handlers (including initializers) can override the default serializers using `@WebSocketHandlerProperties`.
+
+```kotlin
+@Component
+@WebSocketHandlerProperties(serializer = RawSerializer::class)
+class MySpecialHandler {
+    // Custom logic here
+}
+```
+
+---
+
 # Advanced Usage
 
 ### Handling Handshakes

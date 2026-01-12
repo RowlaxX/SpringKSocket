@@ -2,12 +2,12 @@ package fr.rowlaxx.springksocket.core
 
 import fr.rowlaxx.springksocket.data.WebSocketServerProperties
 import fr.rowlaxx.springksocket.service.io.ServerWebSocketFactory
-import fr.rowlaxx.springksocket.util.ByteBufferUtils.getBackingArray
 import fr.rowlaxx.springksocket.util.WebSocketSessionUtils.handleBinaryMessage
 import fr.rowlaxx.springksocket.util.WebSocketSessionUtils.handleClose
 import fr.rowlaxx.springksocket.util.WebSocketSessionUtils.handlePongMessage
 import fr.rowlaxx.springksocket.util.WebSocketSessionUtils.handleTextMessage
 import fr.rowlaxx.springksocket.util.WebSocketSessionUtils.handleTransportError
+import fr.rowlaxx.springkutils.io.utils.ByteBufferExtension.getBackingArray
 import org.springframework.web.socket.*
 import org.springframework.web.socket.handler.AbstractWebSocketHandler
 

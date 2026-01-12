@@ -3,7 +3,6 @@ package fr.rowlaxx.springksocket.core
 import fr.rowlaxx.springksocket.exception.WebSocketClosedException
 import fr.rowlaxx.springksocket.exception.WebSocketConnectionException
 import fr.rowlaxx.springksocket.exception.WebSocketException
-import fr.rowlaxx.springksocket.util.ByteBufferUtils.getBackingArray
 import tools.jackson.core.util.ByteArrayBuilder
 import java.net.http.WebSocket
 import java.nio.ByteBuffer

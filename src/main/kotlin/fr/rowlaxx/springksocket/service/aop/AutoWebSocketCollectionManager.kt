@@ -2,8 +2,8 @@ package fr.rowlaxx.springksocket.service.aop
 
 import fr.rowlaxx.springksocket.model.WebSocket
 import fr.rowlaxx.springksocket.core.AutoWebSocketCollection
+import fr.rowlaxx.springkutils.reflection.utils.ReflectionUtils
 import org.springframework.stereotype.Service
-import org.springframework.util.ReflectionUtils
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
@@ -15,15 +15,13 @@ class AutoWebSocketCollectionManager {
     private fun find(bean: Any): List<AutoWebSocketCollection> {
         val result = mutableListOf<AutoWebSocketCollection>()
 
-        ReflectionUtils.doWithFields(bean::class.java) {
-            if (it.type == AutoWebSocketCollection::class.java) {
-                if (Modifier.isFinal(it.modifiers)) {
-                    it.isAccessible = true
-                    result.add(it.get(bean) as AutoWebSocketCollection)
-                }
-                else {
-                    throw IllegalArgumentException("Please make field '${it.name}' in class ${bean.javaClass.simpleName} immutable")
-                }
+        ReflectionUtils.findFieldsWithType(bean, AutoWebSocketCollection::class.java).onEach {
+            if (Modifier.isFinal(it.modifiers)) {
+                it.isAccessible = true
+                result.add(it.get(bean) as AutoWebSocketCollection)
+            }
+            else {
+                throw IllegalArgumentException("Please make field '${it.name}' in class ${bean.javaClass.simpleName} immutable")
             }
         }
 

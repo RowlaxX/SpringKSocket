@@ -4,8 +4,10 @@ import fr.rowlaxx.springksocket.annotation.AfterHandshake
 import fr.rowlaxx.springksocket.annotation.BeforeHandshake
 import fr.rowlaxx.springksocket.data.WebSocketAttributes
 import fr.rowlaxx.springksocket.util.HttpHeadersUtils.toJavaHeaders
-import fr.rowlaxx.springksocket.util.ReflectionUtils
 import fr.rowlaxx.springksocket.util.WebSocketMapAttributesUtils
+import fr.rowlaxx.springkutils.reflection.utils.MethodInjectionUtils
+import fr.rowlaxx.springkutils.reflection.utils.MethodInjectionUtils.toInjectionSupport
+import fr.rowlaxx.springkutils.reflection.utils.ReflectionUtils
 import org.slf4j.LoggerFactory
 import org.springframework.http.server.ServerHttpRequest
 import org.springframework.http.server.ServerHttpResponse
@@ -21,12 +23,10 @@ class HandshakeInterceptorFactory {
 
     fun extract(bean: Any): HandshakeInterceptor {
         val before = ReflectionUtils.findMethodsWithAnnotation(bean, BeforeHandshake::class)
-            .map { it.second }
-            .map { ReflectionUtils.findInjectionScheme(bean, it, *injectableBefore) }
+            .map { it.second.toInjectionSupport() }
 
         val after = ReflectionUtils.findMethodsWithAnnotation(bean, AfterHandshake::class)
-            .map { it.second }
-            .map { ReflectionUtils.findInjectionScheme(bean, it, *injectableAfter) }
+            .map { it.second.toInjectionSupport() }
 
         return InternalImplementation(
             after = after,
@@ -35,8 +35,8 @@ class HandshakeInterceptorFactory {
     }
 
     private inner class InternalImplementation(
-        private val before: List<ReflectionUtils.InjectionScheme>,
-        private val after: List<ReflectionUtils.InjectionScheme>,
+        private val before: List<MethodInjectionUtils.MethodInjectionSupport>,
+        private val after: List<MethodInjectionUtils.MethodInjectionSupport>,
     ) : HandshakeInterceptor {
 
         override fun beforeHandshake(

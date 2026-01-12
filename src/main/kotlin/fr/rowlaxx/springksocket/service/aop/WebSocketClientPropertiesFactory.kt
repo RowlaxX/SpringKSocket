@@ -3,7 +3,6 @@ package fr.rowlaxx.springksocket.service.aop
 import fr.rowlaxx.springksocket.annotation.WebSocketClient
 import fr.rowlaxx.springksocket.data.WebSocketClientProperties
 import fr.rowlaxx.springksocket.util.HttpHeadersUtils.toJavaHeaders
-import fr.rowlaxx.springksocket.util.ReflectionUtils
 import org.springframework.aop.support.AopUtils
 import org.springframework.context.ApplicationContext
 import org.springframework.context.expression.BeanFactoryResolver

@@ -1,5 +1,6 @@
 package fr.rowlaxx.springksocket.service.io
 
+import fr.rowlaxx.springksocket.conf.WebSocketConfiguration
 import fr.rowlaxx.springksocket.data.WebSocketAttributes
 import fr.rowlaxx.springksocket.exception.WebSocketClosedException
 import fr.rowlaxx.springksocket.exception.WebSocketConnectionException
@@ -29,10 +30,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 @Service
-class BaseWebSocketFactory {
+class BaseWebSocketFactory(
+    private val config: WebSocketConfiguration
+) {
     private val idCounter = AtomicLong()
-    private val executor: ScheduledExecutorService = ExecutorsUtils.newFailsafeScheduledExecutor(8, "WebSocket")
-
 
     abstract class BaseWebSocket(
         private val factory: BaseWebSocketFactory,
@@ -45,8 +46,8 @@ class BaseWebSocketFactory {
         override val readTimeout: Duration,
         override val attributes: WebSocketAttributes = WebSocketAttributes()
     ) : WebSocket {
-        private val mainWorker = SequentialWorker(factory.executor)
-        private val sendWorker = SequentialWorker(factory.executor, enabled = false)
+        private val mainWorker = SequentialWorker(factory.config.executor)
+        private val sendWorker = SequentialWorker(factory.config.executor, enabled = false)
 
         private var handlerIndex: Int = 0
         private val lastInData = AtomicLong()
@@ -61,11 +62,17 @@ class BaseWebSocketFactory {
         override val id = factory.idCounter.andIncrement
         override val currentHandlerIndex: Int get() = handlerIndex
 
+        init {
+            if (pingAfter.isNegative) throw IllegalArgumentException("pingAfter must be a positive integer")
+            if (readTimeout.isNegative) throw IllegalArgumentException("readTimeout must be a positive integer")
+            if (initTimeout.isNegative) throw IllegalArgumentException("initTimeout must be a positive integer")
+        }
+
         override fun hasOpened(): Boolean = opened
         override fun getClosedReason(): WebSocketException? = closedWith
 
         private fun <T> delayed(delay: Duration, action: () -> T): Future<T> {
-            return factory.executor.schedule<T>( action, delay.toMillis(), TimeUnit.MILLISECONDS)
+            return factory.config.executor.schedule<T>( action, delay.toMillis(), TimeUnit.MILLISECONDS)
         }
 
         private inline fun runHandler(handler: WebSocketHandler, action: WebSocketHandler.(WebSocket) -> Unit) {

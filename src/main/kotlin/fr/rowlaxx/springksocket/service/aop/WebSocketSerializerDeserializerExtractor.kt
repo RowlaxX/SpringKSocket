@@ -51,11 +51,7 @@ class WebSocketSerializerDeserializerExtractor(
         val defDes = getDeserializer(defaultDeserializer)
 
         val type = AopUtils.getTargetClass(bean)
-        val anno = type.getAnnotation(WebSocketHandlerProperties::class.java)
-
-        if (anno == null) {
-            return defSer to defDes
-        }
+        val anno = type.getAnnotation(WebSocketHandlerProperties::class.java) ?: return defSer to defDes
 
         return Pair(
             first = if (anno.serializer == WebSocketSerializer.Null::class) defSer else getSerializer(anno.serializer),

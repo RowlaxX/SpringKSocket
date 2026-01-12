@@ -7,7 +7,6 @@ import fr.rowlaxx.springksocket.model.PerpetualWebSocket
 import fr.rowlaxx.springksocket.model.PerpetualWebSocketHandler
 import fr.rowlaxx.springksocket.model.WebSocketDeserializer
 import fr.rowlaxx.springksocket.model.WebSocketSerializer
-import fr.rowlaxx.springksocket.util.ReflectionUtils
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 

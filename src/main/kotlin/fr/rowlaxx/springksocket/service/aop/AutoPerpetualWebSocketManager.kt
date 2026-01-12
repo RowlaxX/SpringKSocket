@@ -2,8 +2,8 @@ package fr.rowlaxx.springksocket.service.aop
 
 import fr.rowlaxx.springksocket.core.AutoPerpetualWebSocket
 import fr.rowlaxx.springksocket.model.PerpetualWebSocket
+import fr.rowlaxx.springkutils.reflection.utils.ReflectionUtils
 import org.springframework.stereotype.Service
-import org.springframework.util.ReflectionUtils
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
@@ -16,15 +16,13 @@ class AutoPerpetualWebSocketManager {
     private fun find(bean: Any): List<AutoPerpetualWebSocket> {
         val result = mutableListOf<AutoPerpetualWebSocket>()
 
-        ReflectionUtils.doWithFields(bean::class.java) {
-            if (it.type == AutoPerpetualWebSocket::class.java) {
-                if (Modifier.isFinal(it.modifiers)) {
-                    it.isAccessible = true
-                    result.add(it.get(bean) as AutoPerpetualWebSocket)
-                }
-                else {
-                    throw IllegalArgumentException("Please make field '${it.name}' in class ${bean.javaClass.simpleName} immutable")
-                }
+        ReflectionUtils.findFieldsWithType(bean, AutoPerpetualWebSocket::class.java).onEach {
+            if (Modifier.isFinal(it.modifiers)) {
+                it.isAccessible = true
+                result.add(it.get(bean) as AutoPerpetualWebSocket)
+            }
+            else {
+                throw IllegalArgumentException("Please make field '${it.name}' in class ${bean.javaClass.simpleName} immutable")
             }
         }
 

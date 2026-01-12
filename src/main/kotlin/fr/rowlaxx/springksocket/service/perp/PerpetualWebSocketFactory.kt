@@ -1,5 +1,6 @@
 package fr.rowlaxx.springksocket.service.perp
 
+import fr.rowlaxx.springksocket.conf.WebSocketConfiguration
 import fr.rowlaxx.springksocket.data.WebSocketClientProperties
 import fr.rowlaxx.springksocket.model.PerpetualWebSocket
 import fr.rowlaxx.springksocket.model.PerpetualWebSocketHandler
@@ -8,6 +9,8 @@ import fr.rowlaxx.springksocket.model.WebSocketHandler
 import fr.rowlaxx.springksocket.service.io.ClientWebSocketFactory
 import fr.rowlaxx.springksocket.core.MessageDeduplicator
 import fr.rowlaxx.springksocket.core.WebSocketHandlerPerpetualProxy
+import fr.rowlaxx.springkutils.concurrent.core.SequentialWorker
+import fr.rowlaxx.springkutils.concurrent.utils.CompletableFutureExtension.composeOnError
 import org.springframework.stereotype.Service
 import java.time.Duration
 import java.util.*
@@ -21,10 +24,10 @@ import kotlin.concurrent.withLock
 
 @Service
 class PerpetualWebSocketFactory(
-    private val webSocketFactory: ClientWebSocketFactory
+    private val webSocketFactory: ClientWebSocketFactory,
+    private val config: WebSocketConfiguration,
 ) {
     private val idCounter = AtomicInteger()
-    private val scheduler = Executors.newSingleThreadScheduledExecutor { Thread(it, "PerpWebSocket Scheduler") }
 
     fun create(
         name: String,
@@ -34,16 +37,8 @@ class PerpetualWebSocketFactory(
         shiftDuration: Duration,
         switchDuration: Duration,
     ): PerpetualWebSocket {
-        if (switchDuration.isNegative) {
-            throw IllegalArgumentException("Switch duration must be a positive duration")
-        }
-        else if (shiftDuration.isNegative) {
-            throw IllegalArgumentException("Shift duration must be a positive duration")
-        }
-
         val id = idCounter.incrementAndGet()
-
-        return InternalImplementation(
+        val instance = InternalImplementation(
             id = id,
             name = name,
             initializers = initializers,
@@ -51,7 +46,10 @@ class PerpetualWebSocketFactory(
             shiftDuration = shiftDuration,
             switchDuration = switchDuration,
             propertiesFactory = propertiesFactory,
-        ).apply { reconnect() }
+        )
+
+        instance.reconnectSafe()
+        return instance
     }
 
     private inner class InternalImplementation(
@@ -63,85 +61,103 @@ class PerpetualWebSocketFactory(
         override val initializers: List<WebSocketHandler>,
         override val handler: PerpetualWebSocketHandler
     ) : PerpetualWebSocket {
-        private val lock = ReentrantLock()
+        private val mainWorker = SequentialWorker(config.executor, enabled = true)
+        private val sendWorker = SequentialWorker(config.executor, enabled = false)
+
         private val connections = LinkedList<WebSocket>()
         private var nextReconnection: Future<*>? = null
         private var connecting = false
         private val deduplicator = MessageDeduplicator()
+
+        init {
+            if (shiftDuration.isNegative) throw IllegalArgumentException("shiftDuration must be a positive duration")
+            if (switchDuration.isNegative) throw IllegalArgumentException("switchDuration must be a positive duration")
+        }
 
         private val handlerProxy = WebSocketHandlerPerpetualProxy(
             acceptClosingConnection = this::acceptClosingConnection,
             acceptOpeningConnection = this::acceptOpeningConnection,
             acceptMessage = this::acceptMessage,
             perpetualWebSocket = this,
-            handler = handler,
-            sendPendingMessages = { messageSender.retry() }
         )
 
-        private val messageSender = MessageSender(
-            lock = lock,
-            canSend = { isConnected() },
-            performSend = { connections.last().sendMessageAsync(it) }
-        )
+        private val handlerChain = initializers.plus(handlerProxy)
 
-        fun reconnect() = lock.withLock {
-            if (!connecting) {
+        fun reconnectSafe() {
+            mainWorker.submitTask {
+                if (connecting) {
+                    return@submitTask
+                }
+
                 connecting = true
                 nextReconnection?.cancel(true)
                 nextReconnection = null
-                webSocketFactory.connectFailsafe(
-                    name = name,
-                    properties = propertiesFactory(),
-                    handlerChain = initializers.plus(handlerProxy)
-                )
+                webSocketFactory.connectFailsafe(name, propertiesFactory(), handlerChain)
             }
         }
 
-        private val pendingConnections = connections.size + if (connecting) 1 else 0
+        private fun totalConnections(): Int {
+            return connections.size + if (connecting) 1 else 0
+        }
 
-        private fun acceptOpeningConnection(webSocket: WebSocket): Boolean = lock.withLock {
+        private fun acceptOpeningConnection(webSocket: WebSocket) = mainWorker.submitTask {
             connecting = false
             connections.add(webSocket)
-            nextReconnection = scheduler.schedule(this::reconnect, shiftDuration.toMillis(), TimeUnit.MILLISECONDS)
-            scheduler.schedule(this::closeOldConnections, switchDuration.toMillis(), TimeUnit.MILLISECONDS)
-            connections.size == 1
-        }
+            nextReconnection = config.executor.schedule(this::reconnectSafe, shiftDuration.toMillis(), TimeUnit.MILLISECONDS)
+            config.executor.schedule(this::closeOldConnections, switchDuration.toMillis(), TimeUnit.MILLISECONDS)
 
-        private fun closeOldConnections() = lock.withLock {
-            connections.dropLast(1).forEach {
-                it.closeAsync("Shift ended", 1000)
+            if (connections.size == 1) {
+                sendWorker.enabled(true)
+                handler.onAvailable(this)
             }
         }
 
-        private fun acceptClosingConnection(webSocket: WebSocket): Boolean = lock.withLock {
+        private fun closeOldConnections() = mainWorker.submitTask {
+            connections
+                .dropLast(1)
+                .forEach { it.closeAsync("Shift ended", 1000) }
+        }
+
+        private fun acceptClosingConnection(webSocket: WebSocket) = mainWorker.submitTask {
             val isLast = connections.lastOrNull()?.id == webSocket.id
             val removed = connections.removeIf { it.id == webSocket.id }
 
-            if (isLast) {
-                reconnect()
-            }
-            if (pendingConnections <= 1) {
-                deduplicator.reset()
-            }
-
-            removed && connections.isEmpty()
-        }
-
-        private fun acceptMessage(webSocket: WebSocket, msg: Any): Boolean = lock.withLock {
-            if (pendingConnections > 1) {
-                deduplicator.accept(msg, webSocket.id)
-            }
-            else {
-                true
+            if (removed) {
+                if (isLast) {
+                    reconnectSafe()
+                }
+                if (totalConnections() <= 1) {
+                    deduplicator.reset()
+                }
+                if (connections.isEmpty()) {
+                    sendWorker.enabled(false)
+                }
             }
         }
 
-        override fun isConnected(): Boolean = lock.withLock {
-            connections.lastOrNull()?.isConnected() ?: false
+        private fun acceptMessage(webSocket: WebSocket, msg: Any) {
+            mainWorker.submitTask {
+                if (totalConnections() <= 1 || (totalConnections() > 1 && deduplicator.accept(msg, webSocket.id))) {
+                    val deserialized = handler.deserializer.fromStringOrByteArray(msg)
+
+                    handler.onMessage(this, deserialized)
+                }
+            }
+        }
+
+        override fun isConnected(): Boolean {
+            return connections.any { it.isConnected() }
         }
 
         override fun sendMessageAsync(message: Any): CompletableFuture<Unit> {
-            return messageSender.send(message)
+            return sendWorker.submitAsyncTask {
+                if (!isConnected()) {
+                    throw IllegalStateException("Not connected")
+                }
+
+                val ws = connections.last { it.isConnected() }
+                ws.sendMessageAsync(message)
+            }.composeOnError { sendMessageAsync(message) }
         }
     }
 }

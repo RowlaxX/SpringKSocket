@@ -6,13 +6,11 @@ class MessageDeduplicator {
     private val receivedTxt = TreeMap<String, Long>()
     private val receivedBin = TreeMap<Long, Long>()
 
-    @Synchronized
     fun reset() {
         receivedTxt.clear()
         receivedBin.clear()
     }
 
-    @Synchronized
     fun accept(msg: Any, receiver: Long): Boolean {
         return when (msg) {
             is String -> {

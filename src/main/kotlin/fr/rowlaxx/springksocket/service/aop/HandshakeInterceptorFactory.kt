@@ -2,13 +2,14 @@ package fr.rowlaxx.springksocket.service.aop
 
 import fr.rowlaxx.springksocket.annotation.AfterHandshake
 import fr.rowlaxx.springksocket.annotation.BeforeHandshake
-import fr.rowlaxx.springksocket.data.WebSocketAttributes
 import fr.rowlaxx.springksocket.util.HttpHeadersUtils.toJavaHeaders
 import fr.rowlaxx.springksocket.util.WebSocketMapAttributesUtils
-import fr.rowlaxx.springkutils.reflection.utils.MethodInjectionUtils
-import fr.rowlaxx.springkutils.reflection.utils.MethodInjectionUtils.toInjectionSupport
+import fr.rowlaxx.springkutils.logging.utils.LoggerExtension.log
+import fr.rowlaxx.springkutils.reflection.utils.InjectionUtils
+import fr.rowlaxx.springkutils.reflection.utils.InjectionUtils.canInvoke
+import fr.rowlaxx.springkutils.reflection.utils.InjectionUtils.invoke
+import fr.rowlaxx.springkutils.reflection.utils.InjectionUtils.toInjectionSupport
 import fr.rowlaxx.springkutils.reflection.utils.ReflectionUtils
-import org.slf4j.LoggerFactory
 import org.springframework.http.server.ServerHttpRequest
 import org.springframework.http.server.ServerHttpResponse
 import org.springframework.stereotype.Service
@@ -17,9 +18,6 @@ import org.springframework.web.socket.server.HandshakeInterceptor
 
 @Service
 class HandshakeInterceptorFactory {
-    private val log = LoggerFactory.getLogger(this::class.java)
-    private val injectableBefore = arrayOf(WebSocketAttributes::class, ServerHttpRequest::class, ServerHttpResponse::class)
-    private val injectableAfter = arrayOf(WebSocketAttributes::class, ServerHttpResponse::class, ServerHttpResponse::class, Exception::class)
 
     fun extract(bean: Any): HandshakeInterceptor {
         val before = ReflectionUtils.findMethodsWithAnnotation(bean, BeforeHandshake::class)
@@ -35,8 +33,8 @@ class HandshakeInterceptorFactory {
     }
 
     private inner class InternalImplementation(
-        private val before: List<MethodInjectionUtils.MethodInjectionSupport>,
-        private val after: List<MethodInjectionUtils.MethodInjectionSupport>,
+        private val before: List<InjectionUtils.Injection>,
+        private val after: List<InjectionUtils.Injection>,
     ) : HandshakeInterceptor {
 
         override fun beforeHandshake(
@@ -50,9 +48,11 @@ class HandshakeInterceptorFactory {
             WebSocketMapAttributesUtils.setRequestHeaders(wsAttributes, request.headers.toJavaHeaders())
             WebSocketMapAttributesUtils.setURI(wsAttributes, request.uri)
 
-            before.forEach {
+            val args = arrayOf(request, response, attributes)
+
+            before.filter { it.canInvoke(*args) }.forEach {
                 try {
-                    val result = ReflectionUtils.inject(it, request, response, attributes)
+                    val result = it.invoke(it, *args)
 
                     if (result == false) {
                         return false
@@ -73,10 +73,11 @@ class HandshakeInterceptorFactory {
             exception: Exception?
         ) {
             val attributes = WebSocketMapAttributesUtils.getOrCreateAttributes(request.attributes)
+            val args = arrayOf(request, response, attributes)
 
-            after.forEach {
+            after.filter { it.canInvoke(*args) }.forEach {
                 try {
-                    ReflectionUtils.inject(it, request, response, attributes, exception)
+                    it.invoke(it, *args)
                 } catch (e: Exception) {
                     log.warn("Method ${it.method} threw an Exception", e)
                 }

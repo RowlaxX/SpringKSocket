@@ -3,6 +3,7 @@ package fr.rowlaxx.springksocket.service.aop
 import fr.rowlaxx.springksocket.annotation.WebSocketClient
 import fr.rowlaxx.springksocket.data.WebSocketClientProperties
 import fr.rowlaxx.springksocket.util.HttpHeadersUtils.toJavaHeaders
+import fr.rowlaxx.springkutils.reflection.utils.ReflectionUtils
 import org.springframework.aop.support.AopUtils
 import org.springframework.context.ApplicationContext
 import org.springframework.context.expression.BeanFactoryResolver
@@ -22,7 +23,7 @@ class WebSocketClientPropertiesFactory(
         .apply { beanResolver = BeanFactoryResolver(applicationContext) }
 
     fun extract(bean: Any): () -> WebSocketClientProperties {
-        val methods = ReflectionUtils.findMethodsWithReturnType(bean, WebSocketClientProperties::class)
+        val methods = ReflectionUtils.findMethodsWithReturnType(bean, WebSocketClientProperties::class.java)
         val type = AopUtils.getTargetClass(bean)
         val anno = type.getAnnotation(WebSocketClient::class.java)
 
@@ -39,7 +40,6 @@ class WebSocketClientPropertiesFactory(
         }
 
         val method = methods.single()
-        method.isAccessible = true
 
         return {
             org.springframework.util.ReflectionUtils.invokeMethod(method, bean) as WebSocketClientProperties
@@ -50,12 +50,7 @@ class WebSocketClientPropertiesFactory(
         val headers = HttpHeaders()
 
         for (header in anno.headers) {
-            val value = evaluate(header.expression)
-
-            if (value == null) {
-                continue
-            }
-
+            val value = evaluate(header.expression) ?: continue
             headers.add(header.name, value.toString())
         }
 
